@@ -24,6 +24,11 @@ interface Loaded {
 
 type Status = "idle" | "loading" | "ready" | "error";
 
+interface ShortLink {
+  shortUrl: string;
+  statsUrl: string;
+}
+
 const SAFE_PCT = (SAFE_MARGIN / STORY_H) * 100;
 
 const STEPS = [
@@ -58,6 +63,11 @@ export default function StoryLink() {
   const [showGuides, setShowGuides] = useState(false);
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState<"share" | "download" | null>(null);
+  const [useShort, setUseShort] = useState(false);
+  const [short, setShort] = useState<ShortLink | null>(null);
+  const [shortState, setShortState] = useState<"idle" | "loading" | "error">("idle");
+  const [shortError, setShortError] = useState("");
+  const shortTicket = useRef(0);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const blobRef = useRef<Blob | null>(null);
@@ -97,6 +107,38 @@ export default function StoryLink() {
     };
   }, [data, template, status]);
 
+  // Dibuat lebih awal (bukan saat "Salin link" ditekan) supaya penyalinan tetap terjadi
+  // di dalam gestur user; Safari menolak clipboard setelah await yang lama.
+  async function makeShort(url: string) {
+    const ticket = ++shortTicket.current;
+    setShort(null);
+    setShortState("loading");
+    setShortError("");
+    try {
+      const res = await fetch("/api/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const body = (await res.json().catch(() => null)) as (Partial<ShortLink> & { error?: string }) | null;
+      if (!res.ok || !body?.shortUrl || !body.statsUrl) {
+        throw new Error(body?.error ?? "Gagal membuat short link.");
+      }
+      if (ticket !== shortTicket.current) return;
+      setShort({ shortUrl: body.shortUrl, statsUrl: body.statsUrl });
+      setShortState("idle");
+    } catch (e) {
+      if (ticket !== shortTicket.current) return;
+      setShortState("error");
+      setShortError(e instanceof Error ? e.message : "Gagal membuat short link.");
+    }
+  }
+
+  function toggleShort(on: boolean) {
+    setUseShort(on);
+    if (on && data && !short && shortState !== "loading") makeShort(data.url);
+  }
+
   async function generate(raw = input) {
     const id = parseVideoId(raw);
     if (!id) {
@@ -106,6 +148,9 @@ export default function StoryLink() {
       return;
     }
     const ticket = ++requestRef.current;
+    shortTicket.current++;
+    setShort(null);
+    setShortState("idle");
     setStatus("loading");
     setError("");
     try {
@@ -121,8 +166,10 @@ export default function StoryLink() {
       }
       const meta = (await metaRes.json()) as { title: string; channel: string };
       if (ticket !== requestRef.current) return;
-      setData({ id, url: raw.trim(), title: meta.title, channel: meta.channel, thumb: prepareThumb(img) });
+      const url = raw.trim();
+      setData({ id, url, title: meta.title, channel: meta.channel, thumb: prepareThumb(img) });
       setStatus("ready");
+      if (useShort) makeShort(url);
     } catch (e) {
       if (ticket !== requestRef.current) return;
       setData(null);
@@ -190,21 +237,35 @@ export default function StoryLink() {
     }
   }
 
-  async function copyLink() {
-    if (!data) return;
+  async function copyText(text: string) {
     try {
-      await navigator.clipboard.writeText(data.url);
+      await navigator.clipboard.writeText(text);
+      return true;
     } catch {
       const ta = document.createElement("textarea");
-      ta.value = data.url;
+      ta.value = text;
       ta.style.position = "fixed";
       ta.style.opacity = "0";
       document.body.appendChild(ta);
       ta.select();
       const ok = document.execCommand("copy");
       ta.remove();
-      if (!ok) return flash("Gagal menyalin. Salin manual dari kolom di atas.");
+      return ok;
     }
+  }
+
+  async function copyLink() {
+    if (!data) return;
+    if (useShort) {
+      if (shortState === "loading") return flash("Short link masih disiapkan, tunggu sebentar.");
+      if (!short) {
+        makeShort(data.url);
+        return flash("Mencoba membuat short link lagi…");
+      }
+      if (!(await copyText(short.shortUrl))) return flash("Gagal menyalin. Salin manual dari kotak short link.");
+      return flash("Short link disalin ✓");
+    }
+    if (!(await copyText(data.url))) return flash("Gagal menyalin. Salin manual dari kolom di atas.");
     flash("Link disalin ✓");
   }
 
@@ -373,6 +434,55 @@ export default function StoryLink() {
               <p className="text-center text-sm text-muted">
                 Habis itu di IG, tambah Link Sticker lalu tempel link-nya
               </p>
+
+              <div className="flex flex-col gap-3 rounded-2xl border-2 border-line bg-card p-4">
+                <label className="flex cursor-pointer items-center justify-between gap-4">
+                  <span className="flex flex-col">
+                    <span className="font-bold leading-tight">Pakai short link + hitung klik</span>
+                    <span className="text-xs text-muted">Aktif 24 jam, hanya jumlah klik yang disimpan.</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={useShort}
+                    onChange={(e) => toggleShort(e.target.checked)}
+                    className="h-6 w-11 shrink-0 appearance-none rounded-full bg-line transition-colors checked:bg-accent relative before:absolute before:left-0.5 before:top-0.5 before:h-5 before:w-5 before:rounded-full before:bg-white before:transition-transform checked:before:translate-x-5"
+                  />
+                </label>
+                {useShort && shortState === "loading" && <p className="text-sm text-muted">Menyiapkan short link…</p>}
+                {useShort && shortState === "error" && (
+                  <p role="alert" className="rounded-xl bg-accent/10 px-3 py-2 text-sm font-medium text-[#b3260a]">
+                    {shortError} Tekan “Salin link” untuk mencoba lagi, atau matikan toggle untuk pakai link YouTube biasa.
+                  </p>
+                )}
+                {useShort && short && (
+                  <div className="flex flex-col gap-2 text-sm">
+                    <p>
+                      Short link: <span className="break-all font-bold">{short.shortUrl}</span>
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <a
+                        href={short.statsUrl}
+                        target="_blank"
+                        rel="noopener"
+                        className="grid h-11 place-items-center rounded-xl bg-ink font-bold text-paper"
+                      >
+                        Lihat statistik
+                      </a>
+                      <button
+                        type="button"
+                        onClick={async () =>
+                          flash((await copyText(short.statsUrl)) ? "Link statistik disalin ✓" : "Gagal menyalin.")
+                        }
+                        className="h-11 rounded-xl border-2 border-ink font-bold"
+                      >
+                        Salin link statistik
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted">Simpan link statistik; itu satu-satunya cara memantau klik.</p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </section>

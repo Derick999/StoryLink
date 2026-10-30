@@ -30,3 +30,11 @@ export function parseVideoId(input: string): string | null {
 
   return isValidVideoId(id) ? id : null;
 }
+
+/** Versi aman dari link YouTube yang ditempel user (selalu https, host sudah tervalidasi), atau null. */
+export function normalizeYouTubeUrl(input: string): string | null {
+  if (!parseVideoId(input)) return null;
+  let raw = input.trim();
+  if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
+  return new URL(raw).href;
+}

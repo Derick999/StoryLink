@@ -33,3 +33,16 @@ vercel --prod
 Opsi B — GitHub: push repo ini ke GitHub, lalu **Add New → Project** di vercel.com dan import repo-nya. Tidak ada environment variable yang dibutuhkan.
 
 > Web Share API (`navigator.share` dengan file) hanya jalan di **HTTPS** dan di browser HP. Tes tombol "Share ke Instagram" lewat URL Vercel di HP, bukan `localhost` di desktop (desktop akan fallback ke download).
+
+## Short link + hitung klik (opsional, 24 jam)
+
+Toggle "Pakai short link + hitung klik" membuat `/l/{id}` yang redirect (302) ke YouTube dan menghitung klik, plus halaman `/stats/{token}` privat. Data (`link:`, `clicks:`, `stats:`) dihapus otomatis setelah 24 jam (TTL Redis). Tidak ada IP, user-agent, atau data pengunjung yang disimpan; hanya angka total klik. HEAD dan user-agent bot/crawler/preview tidak dihitung.
+
+Env var (salah satu pasangan):
+
+| Variabel | Keterangan |
+| --- | --- |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Nama bawaan Upstash |
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Nama yang diisi otomatis integrasi Vercel Marketplace |
+
+Di Vercel: **Project → Storage → Marketplace → Upstash (Redis) → Create/Connect**, pilih project ini dan semua environment, lalu **redeploy**. Untuk lokal, `vercel env pull .env.local` atau isi `.env.local` manual. Tanpa Redis, toggle menampilkan pesan error dan fitur lain tetap jalan.

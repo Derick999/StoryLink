@@ -1,3 +1,4 @@
+import { WATERMARK_TEXT } from "./branding";
 import { cropShortsThumb } from "./thumbCrop";
 
 /**
@@ -33,6 +34,8 @@ export interface StoryData {
   thumb: PreparedThumb;
   /** Shorts: thumbnail vertikal 9:16. Video panjang: 16:9 seperti biasa. */
   isShort: boolean;
+  /** Gambar watermark "dibuat dengan StoryLink" di bawah konten. */
+  watermark: boolean;
 }
 
 export interface StoryTemplate {
@@ -49,7 +52,7 @@ export async function ensureFonts(text: string) {
   try {
     await Promise.all([
       document.fonts.load(`800 64px ${FONT}`, text),
-      document.fonts.load(`600 36px ${FONT}`, text),
+      document.fonts.load(`600 36px ${FONT}`, `${text} ${WATERMARK_TEXT}`),
     ]);
     await document.fonts.ready;
   } catch {
@@ -505,6 +508,40 @@ const bold: StoryTemplate = {
 
 export const TEMPLATES: StoryTemplate[] = [blur, minimal, bold];
 
+/** Di dalam zona aman (bawah 250px) dan di bawah ruang Link Sticker (konten berakhir di ZONE_BOTTOM). */
+const WATERMARK_Y = STORY_H - SAFE_MARGIN - 52;
+
+function relLuminance(r: number, g: number, b: number) {
+  const f = (v: number) => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+
+/** Teks kecil dan halus; terang/gelap dipilih dari latar yang sudah tergambar di posisi itu. */
+function drawWatermark(ctx: CanvasRenderingContext2D) {
+  ctx.font = `600 28px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const textW = Math.ceil(ctx.measureText(WATERMARK_TEXT).width);
+  const x = Math.floor(STORY_W / 2 - textW / 2);
+  const { data } = ctx.getImageData(x, WATERMARK_Y, textW, 34);
+  let r = 0, g = 0, b = 0;
+  const n = data.length / 4;
+  for (let i = 0; i < data.length; i += 4) {
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+  }
+  const lum = relLuminance(r / n, g / n, b / n);
+  const light = 1.05 / (lum + 0.05);
+  const dark = (lum + 0.05) / 0.06;
+  ctx.fillStyle = light >= dark ? "rgba(255,255,255,0.7)" : "rgba(21,18,15,0.7)";
+  ctx.fillText(WATERMARK_TEXT, STORY_W / 2, WATERMARK_Y);
+  ctx.textAlign = "left";
+}
+
 export function renderStory(canvas: HTMLCanvasElement, templateId: TemplateId, data: StoryData) {
   canvas.width = STORY_W;
   canvas.height = STORY_H;
@@ -515,4 +552,5 @@ export function renderStory(canvas: HTMLCanvasElement, templateId: TemplateId, d
   ctx.textBaseline = "top";
   const template = TEMPLATES.find((t) => t.id === templateId) ?? TEMPLATES[0];
   template.draw(ctx, data);
+  if (data.watermark) drawWatermark(ctx);
 }

@@ -62,6 +62,7 @@ export default function StoryLink() {
   const [data, setData] = useState<Loaded | null>(null);
   const [template, setTemplate] = useState<TemplateId>("blur");
   const [showGuides, setShowGuides] = useState(false);
+  const [watermark, setWatermark] = useState(true);
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState<"share" | "download" | null>(null);
   const [useShort, setUseShort] = useState(false);
@@ -90,7 +91,7 @@ export default function StoryLink() {
       await ensureFonts(`${data.title} ${data.channel} TONTON DI YOUTUBE`);
       const canvas = canvasRef.current;
       if (cancelled || !canvas) return;
-      renderStory(canvas, template, data);
+      renderStory(canvas, template, { ...data, watermark });
       try {
         const blob = await canvasToBlob(canvas);
         if (!cancelled) blobRef.current = blob; // siap dipakai langsung saat tombol ditekan
@@ -106,7 +107,7 @@ export default function StoryLink() {
     return () => {
       cancelled = true;
     };
-  }, [data, template, status]);
+  }, [data, template, status, watermark]);
 
   // Dibuat lebih awal (bukan saat "Salin link" ditekan) supaya penyalinan tetap terjadi
   // di dalam gestur user; Safari menolak clipboard setelah await yang lama.
@@ -417,6 +418,15 @@ export default function StoryLink() {
                 className="h-4 w-4 accent-[#ff4a1c]"
               />
               Tampilkan zona aman Story
+            </label>
+            <label className="mt-2 flex items-center justify-center gap-2 text-sm text-muted">
+              <input
+                type="checkbox"
+                checked={watermark}
+                onChange={(e) => setWatermark(e.target.checked)}
+                className="h-4 w-4 accent-[#ff4a1c]"
+              />
+              Tampilkan watermark StoryLink
             </label>
           </div>
 

@@ -18,12 +18,19 @@ export class StoreUnavailableError extends Error {
 
 let client: Redis | null | undefined;
 
-/** Mendukung nama env var Upstash langsung maupun hasil integrasi Vercel Marketplace (KV_*). */
+/** Kredensial dari integrasi Vercel Marketplace (Upstash): KV_REST_API_URL dan KV_REST_API_TOKEN. */
 function getRedis(): Redis {
   if (client === undefined) {
-    const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
-    client = url && token ? new Redis({ url, token }) : null;
+    const missing = ["KV_REST_API_URL", "KV_REST_API_TOKEN"].filter((name) => !process.env[name]);
+    if (missing.length > 0) {
+      console.error(
+        `[store] Redis tidak dikonfigurasi: env var ${missing.join(" dan ")} kosong. ` +
+          "Sambungkan Upstash Redis lewat Vercel Marketplace atau isi variabelnya, lalu redeploy.",
+      );
+      client = null;
+    } else {
+      client = new Redis({ url: process.env.KV_REST_API_URL!, token: process.env.KV_REST_API_TOKEN! });
+    }
   }
   if (!client) throw new StoreUnavailableError();
   return client;
@@ -34,7 +41,8 @@ async function guard<T>(fn: (r: Redis) => Promise<T>): Promise<T> {
   const r = getRedis();
   try {
     return await fn(r);
-  } catch {
+  } catch (e) {
+    console.error("[store] Perintah Redis gagal:", e);
     throw new StoreUnavailableError();
   }
 }

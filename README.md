@@ -38,11 +38,13 @@ Opsi B — GitHub: push repo ini ke GitHub, lalu **Add New → Project** di verc
 
 Toggle "Pakai short link + hitung klik" membuat `/l/{id}` yang redirect (302) ke YouTube dan menghitung klik, plus halaman `/stats/{token}` privat. Data (`link:`, `clicks:`, `stats:`) dihapus otomatis setelah 24 jam (TTL Redis). Tidak ada IP, user-agent, atau data pengunjung yang disimpan; hanya angka total klik. HEAD dan user-agent bot/crawler/preview tidak dihitung.
 
-Env var (salah satu pasangan):
+Env var (diisi otomatis oleh integrasi Vercel Marketplace):
 
 | Variabel | Keterangan |
 | --- | --- |
-| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Nama bawaan Upstash |
-| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Nama yang diisi otomatis integrasi Vercel Marketplace |
+| `KV_REST_API_URL` | URL REST Upstash Redis |
+| `KV_REST_API_TOKEN` | Token baca-tulis (bukan `KV_REST_API_READ_ONLY_TOKEN`) |
+
+Kalau salah satu kosong, server mencatat error yang menyebut variabel mana yang hilang.
 
 Di Vercel: **Project → Storage → Marketplace → Upstash (Redis) → Create/Connect**, pilih project ini dan semua environment, lalu **redeploy**. Untuk lokal, `vercel env pull .env.local` atau isi `.env.local` manual. Tanpa Redis, toggle menampilkan pesan error dan fitur lain tetap jalan.

@@ -12,10 +12,11 @@ import {
   type PreparedThumb,
   type TemplateId,
 } from "@/lib/renderStory";
-import { parseVideoId } from "@/lib/youtube";
+import { parseYouTube } from "@/lib/youtube";
 
 interface Loaded {
   id: string;
+  isShort: boolean;
   url: string;
   title: string;
   channel: string;
@@ -140,13 +141,14 @@ export default function StoryLink() {
   }
 
   async function generate(raw = input) {
-    const id = parseVideoId(raw);
-    if (!id) {
+    const parsed = parseYouTube(raw);
+    if (!parsed) {
       setStatus("error");
       setData(null);
       setError("Link tidak dikenali. Pakai link YouTube seperti youtube.com/shorts/…, youtu.be/… atau youtube.com/watch?v=…");
       return;
     }
+    const { id, isShort } = parsed;
     const ticket = ++requestRef.current;
     shortTicket.current++;
     setShort(null);
@@ -167,7 +169,7 @@ export default function StoryLink() {
       const meta = (await metaRes.json()) as { title: string; channel: string };
       if (ticket !== requestRef.current) return;
       const url = raw.trim();
-      setData({ id, url, title: meta.title, channel: meta.channel, thumb: prepareThumb(img) });
+      setData({ id, isShort, url, title: meta.title, channel: meta.channel, thumb: prepareThumb(img, isShort) });
       setStatus("ready");
       if (useShort) makeShort(url);
     } catch (e) {
@@ -360,6 +362,20 @@ export default function StoryLink() {
               );
             })}
           </div>
+
+          {status === "ready" && data && (
+            <p className="flex items-center gap-2 text-sm text-muted">
+              Terdeteksi sebagai
+              <span
+                data-testid="type-badge"
+                className={`rounded-full px-2.5 py-0.5 text-xs font-extrabold uppercase tracking-wide ${
+                  data.isShort ? "bg-accent text-white" : "bg-ink text-paper"
+                }`}
+              >
+                {data.isShort ? "Shorts" : "Video"}
+              </span>
+            </p>
+          )}
 
           <div className="mx-auto w-full max-w-[19rem]">
             <div className="relative aspect-[9/16] overflow-hidden rounded-[1.6rem] bg-ink shadow-[0_18px_40px_-18px_rgba(21,18,15,0.55)] ring-4 ring-ink">

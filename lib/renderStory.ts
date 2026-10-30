@@ -1,3 +1,5 @@
+import { cropShortsThumb } from "./thumbCrop";
+
 /**
  * Render template Instagram Story (1080x1920) ke <canvas>.
  * Tambah template baru: tulis fungsi `draw` lalu daftarkan di TEMPLATES.
@@ -29,6 +31,8 @@ export interface StoryData {
   title: string;
   channel: string;
   thumb: PreparedThumb;
+  /** Shorts: thumbnail vertikal 9:16. Video panjang: 16:9 seperti biasa. */
+  isShort: boolean;
 }
 
 export interface StoryTemplate {
@@ -162,8 +166,8 @@ function toBackground(r: number, g: number, b: number): string {
   return `hsl(${Math.round(h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%)`;
 }
 
-export function prepareThumb(img: HTMLImageElement): PreparedThumb {
-  const canvas = trimBars(img);
+export function prepareThumb(img: HTMLImageElement, isShort = false): PreparedThumb {
+  const canvas = isShort ? cropShortsThumb(img).canvas : trimBars(img);
   return { canvas, width: canvas.width, height: canvas.height, dominant: dominantColor(canvas) };
 }
 
@@ -178,6 +182,9 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
 }
+
+/** Lebar maksimum gambar vertikal Shorts (~63% kanvas): sumber crop kecil, jangan di-upscale berlebihan. */
+const SHORT_MAX_W = 680;
 
 function fitSize(thumb: PreparedThumb, maxW: number, maxH: number) {
   const scale = Math.min(maxW / thumb.width, maxH / thumb.height);
@@ -306,7 +313,7 @@ const blur: StoryTemplate = {
   id: "blur",
   label: "Blur",
   hint: "Latar thumbnail buram",
-  draw(ctx, { title, channel, thumb }) {
+  draw(ctx, { title, channel, thumb, isShort }) {
     drawBlurredCover(ctx, thumb.canvas);
     const shade = ctx.createLinearGradient(0, 0, 0, STORY_H);
     shade.addColorStop(0, "rgba(8,6,6,0.62)");
@@ -315,13 +322,15 @@ const blur: StoryTemplate = {
     ctx.fillRect(0, 0, STORY_W, STORY_H);
 
     const cx = STORY_W / 2;
-    const t = layoutTitle(ctx, title, 880, [66, 58, 52, 46], 3, 1.16);
+    const t = layoutTitle(ctx, title, 880, isShort ? [60, 54, 48, 44] : [66, 58, 52, 46], 3, 1.16);
     const channelH = 46;
     const gapThumb = 56;
     const gapChannel = 22;
     const textBlock = gapThumb + t.height + gapChannel + channelH;
 
-    const { w, h } = fitSize(thumb, 900, Math.min(760, ZONE_H - textBlock));
+    const { w, h } = isShort
+      ? fitSize(thumb, SHORT_MAX_W, ZONE_H - textBlock)
+      : fitSize(thumb, 900, Math.min(760, ZONE_H - textBlock));
     const top = ZONE_TOP + Math.max(0, (ZONE_H - (h + textBlock)) / 2);
 
     ctx.save();
@@ -354,12 +363,12 @@ const minimal: StoryTemplate = {
   id: "minimal",
   label: "Minimal",
   hint: "Kartu putih, warna dari thumbnail",
-  draw(ctx, { title, channel, thumb }) {
+  draw(ctx, { title, channel, thumb, isShort }) {
     ctx.fillStyle = thumb.dominant;
     ctx.fillRect(0, 0, STORY_W, STORY_H);
 
     const pad = 44;
-    const cardW = 888;
+    const cardW = isShort ? 760 : 888;
     const innerW = cardW - pad * 2;
     const cardX = (STORY_W - cardW) / 2;
 
@@ -367,7 +376,9 @@ const minimal: StoryTemplate = {
     const channelH = 44;
     const gap = 36;
     const textBlock = gap + t.height + 14 + channelH;
-    const { w, h } = fitSize(thumb, innerW, Math.min(760, ZONE_H - pad * 2 - textBlock));
+    const { w, h } = isShort
+      ? fitSize(thumb, Math.min(innerW, SHORT_MAX_W), ZONE_H - pad * 2 - textBlock)
+      : fitSize(thumb, innerW, Math.min(760, ZONE_H - pad * 2 - textBlock));
 
     const cardH = pad + h + textBlock + pad;
     const cardY = ZONE_TOP + Math.max(0, (ZONE_H - cardH) / 2);
@@ -404,7 +415,7 @@ const bold: StoryTemplate = {
   id: "bold",
   label: "Bold",
   hint: "Judul besar, badge merah",
-  draw(ctx, { title, channel, thumb }) {
+  draw(ctx, { title, channel, thumb, isShort }) {
     ctx.fillStyle = "#0E0D0C";
     ctx.fillRect(0, 0, STORY_W, STORY_H);
     // aksen: blok warna miring di pojok
@@ -424,13 +435,20 @@ const bold: StoryTemplate = {
     ctx.font = `600 34px ${FONT}`;
     const channelText = oneLine(ctx, channel.toUpperCase(), maxW - 120);
     const channelH = 40;
-    const t = layoutTitle(ctx, title, maxW, [112, 100, 88, 76, 66, 58], 4, 1.04);
+    const t = isShort
+      ? layoutTitle(ctx, title, maxW, [92, 82, 72, 64, 56, 50], 3, 1.04)
+      : layoutTitle(ctx, title, maxW, [112, 100, 88, 76, 66, 58], 4, 1.04);
     const badgeH = 92;
     const gapA = 26;
     const gapB = 64;
     const textBlock = channelH + gapA + t.height + gapB;
     const shadow = 18;
-    const { w, h } = fitSize(thumb, maxW - shadow, Math.min(760, ZONE_H - textBlock - badgeH / 2 - shadow));
+    const room = ZONE_H - textBlock - badgeH / 2 - shadow;
+    const { w, h } = isShort
+      ? fitSize(thumb, SHORT_MAX_W, room)
+      : fitSize(thumb, maxW - shadow, Math.min(760, room));
+    // Shorts: gambar vertikal di tengah; video panjang tetap rata kiri
+    const tx = isShort ? Math.round((STORY_W - w - shadow) / 2) : x;
 
     const total = textBlock + h + badgeH / 2 + shadow;
     const top = ZONE_TOP + Math.max(0, (ZONE_H - total) / 2);
@@ -446,12 +464,12 @@ const bold: StoryTemplate = {
 
     const ty = top + textBlock;
     ctx.fillStyle = "#FF3B30";
-    roundedRect(ctx, x + shadow, ty + shadow, w, h, 30);
+    roundedRect(ctx, tx + shadow, ty + shadow, w, h, 30);
     ctx.fill();
-    drawThumb(ctx, thumb, x, ty, w, h, 30);
+    drawThumb(ctx, thumb, tx, ty, w, h, 30);
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = 8;
-    roundedRect(ctx, x, ty, w, h, 30);
+    roundedRect(ctx, tx, ty, w, h, 30);
     ctx.stroke();
 
     // badge
@@ -459,7 +477,7 @@ const bold: StoryTemplate = {
     ctx.font = `800 40px ${FONT}`;
     const labelW = ctx.measureText(label).width;
     const badgeW = 40 + 44 + 22 + labelW + 44;
-    const bx = x + 28;
+    const bx = isShort ? Math.round(tx + (w - badgeW) / 2) : x + 28;
     const by = ty + h - badgeH / 2;
     ctx.save();
     ctx.translate(bx + badgeW / 2, by + badgeH / 2);
